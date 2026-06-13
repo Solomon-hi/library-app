@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 
-// Inline Custom SVGs for members dashboard
+// SVGs
 const CardIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="2" y="5" width="20" height="14" rx="2" ry="2" />
     <line x1="2" y1="10" x2="22" y2="10" />
   </svg>
@@ -21,7 +21,9 @@ export default function Members({
   onAddMember, 
   onDeleteMember,
   quickActionState,
-  clearQuickAction
+  clearQuickAction,
+  showToast,
+  showConfirm
 }) {
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -35,7 +37,7 @@ export default function Members({
   const handleFormSubmit = (e) => {
     e.preventDefault();
     if (!name || !email) {
-      alert("Name and email are required fields.");
+      showToast("Name and email are required fields.", "error");
       return;
     }
 
@@ -62,7 +64,7 @@ export default function Members({
   };
 
   // Handle Dashboard triggers
-  React.useEffect(() => {
+  useEffect(() => {
     if (quickActionState === "addMember") {
       setIsFormOpen(true);
       clearQuickAction();
@@ -84,7 +86,8 @@ export default function Members({
         records[b.borrowedBy].push({
           id: b.id,
           title: b.title,
-          dueDate: b.dueDate
+          dueDate: b.dueDate,
+          isOverdue: b.dueDate && new Date(b.dueDate) < new Date()
         });
       }
     });
@@ -112,36 +115,40 @@ export default function Members({
     // Safety check: verify if the borrower has unreturned catalog holdings
     const borrowedItems = memberCirculations[member.id] || [];
     if (borrowedItems.length > 0) {
-      alert(`Cannot delete member file: ${member.name} has ${borrowedItems.length} borrowed books that must be returned first.`);
+      showToast(`Cannot delete member: ${member.name} has ${borrowedItems.length} borrowed books that must be returned first.`, "error");
       return;
     }
 
-    if (confirm(`Are you sure you want to remove card holder file for ${member.name}?`)) {
+    showConfirm("Revoke Membership?", `Are you sure you want to permanently remove "${member.name}" as a card holder?`, () => {
       onDeleteMember(member.id);
-    }
+    });
   };
 
   return (
-    <div className="members-container animate-fade-in">
+    <div className="members-container animate-fade">
       
-      {/* Control panel drawer */}
-      <div className="catalog-control-panel glass-panel">
-        <div className="search-bar-wrapper">
-          <span className="search-icon"><SearchIcon /></span>
-          <input 
-            type="text" 
-            placeholder="Search roster files by name, card ID, or email..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-field search-input"
-          />
-          {search && (
-            <button className="clear-search-btn" onClick={() => setSearch("")}>×</button>
-          )}
+      {/* Control Panel Toolbar */}
+      <div className="toolbar" style={{ marginBottom: "20px" }}>
+        <div className="toolbar-left">
+          <div className="search-bar">
+            <div className="input-icon-wrap">
+              <span className="input-icon"><SearchIcon /></span>
+              <input 
+                type="text" 
+                placeholder="Search roster files by name, card ID, or email..." 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input"
+              />
+              {search && (
+                <button className="input-clear" onClick={() => setSearch("")}>×</button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="filter-sort-controls justify-end">
-          <button className="btn btn-accent" onClick={() => setIsFormOpen(true)}>
+        <div className="toolbar-right">
+          <button className="btn btn-purple" onClick={() => setIsFormOpen(true)}>
             + Register Card Holder
           </button>
         </div>
@@ -149,89 +156,98 @@ export default function Members({
 
       {/* Grid listing */}
       {filteredMembers.length === 0 ? (
-        <div className="empty-catalog-state glass-panel animate-scale-up">
-          <div className="empty-state-graphic">
-            <svg viewBox="0 0 100 100" width="80" height="80" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
-              <circle cx="50" cy="40" r="16" />
-              <path d="M25 75v-4c0-7.7 6.3-14 14-14h22c7.7 0 14 6.3 14 14v4" />
+        <div className="empty-state card card-p animate-in">
+          <div className="empty-icon">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="12" cy="7" r="4" />
+              <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
             </svg>
           </div>
-          <h3>No matching members found</h3>
-          <p>We couldn't locate any library card folders that match your search terms.</p>
-          <button className="btn btn-secondary" onClick={() => setSearch("")}>
+          <h3 className="empty-title">No matching members found</h3>
+          <p className="empty-sub">We couldn't locate any library card folders that match your search terms.</p>
+          <button className="btn btn-ghost btn-sm mt-3" onClick={() => setSearch("")}>
             Clear Member Filter
           </button>
         </div>
       ) : (
-        <div className="members-grid">
+        <div className="member-grid">
           {filteredMembers.map(member => {
             const borrowedItems = memberCirculations[member.id] || [];
             const isExpanded = expandedMemberId === member.id;
+            const hasOverdue = borrowedItems.some(i => i.isOverdue);
+            const initials = member.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2);
             
             return (
               <div 
                 key={member.id} 
-                className={`member-card glass-panel ${isExpanded ? "expanded" : ""}`}
+                className={`member-card card ${isExpanded ? "expanded" : ""} ${hasOverdue ? "overdue-card" : ""}`}
                 onClick={() => toggleExpand(member.id)}
               >
-                <div className="member-card-main">
+                <div className="member-top">
                   {/* Avatar bubble */}
                   <div className="member-avatar" style={{ background: member.avatarColor }}>
-                    {member.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2)}
+                    {initials}
                   </div>
 
                   {/* Core details */}
-                  <div className="member-info-section">
-                    <div className="member-card-header">
-                      <span className="member-card-id"><CardIcon /> {member.id}</span>
+                  <div className="member-info">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span className="member-id">
+                        <CardIcon /> {member.id}
+                      </span>
                       {borrowedItems.length > 0 ? (
-                        <span className="badge badge-borrowed">{borrowedItems.length} items out</span>
+                        <span className={`badge ${hasOverdue ? "badge-red" : "badge-amber"}`}>
+                          {borrowedItems.length} items out
+                        </span>
                       ) : (
-                        <span className="badge badge-available">Clear Status</span>
+                        <span className="badge badge-green">Clear Status</span>
                       )}
                     </div>
 
                     <h3 className="member-name">{member.name}</h3>
                     <p className="member-email">{member.email}</p>
-                    <p className="member-phone">{member.phone}</p>
+                    {member.phone && <p className="text-muted" style={{ fontSize: "0.8rem", marginTop: "2px" }}>{member.phone}</p>}
                   </div>
                 </div>
 
                 {/* Expanded active borrows and actions */}
                 {isExpanded && (
-                  <div className="member-expanded-drawer" onClick={(e) => e.stopPropagation()}>
-                    <hr className="drawer-divider" />
-                    
-                    <div className="drawer-grid">
+                  <div className="member-drawer" onClick={(e) => e.stopPropagation()}>
+                    <div className="member-drawer-cols">
                       {/* Left: Registration data */}
-                      <div className="drawer-desc-block">
-                        <h4>Borrower Registration</h4>
-                        <p><strong>Member Status:</strong> Verified</p>
-                        <p><strong>Registration Date:</strong> {member.joinedDate}</p>
-                        <p><strong>System File Location:</strong> Local DB Sync</p>
+                      <div>
+                        <div className="drawer-sec-title">Borrower Registration</div>
+                        <div className="desc-meta" style={{ marginTop: 0 }}>
+                          <div><strong>Status:</strong> Verified</div>
+                          <div><strong>Registration Date:</strong> {member.joinedDate}</div>
+                          <div><strong>Card Holder:</strong> Card Active</div>
+                        </div>
                         <button 
-                          className="btn btn-danger btn-small margin-top-sm"
+                          className="btn btn-danger btn-sm"
+                          style={{ marginTop: "16px" }}
                           onClick={(e) => handleDeleteClick(e, member)}
                         >
-                          Revoke Membership Card
+                          Revoke Membership
                         </button>
                       </div>
 
                       {/* Right: Borrowed inventory list */}
-                      <div className="drawer-queue-block">
-                        <h4>Active Checked-Out items</h4>
+                      <div>
+                        <div className="drawer-sec-title">Active Checked-Out items</div>
                         {borrowedItems.length > 0 ? (
-                          <ul className="reserve-queue-list">
+                          <ul className="queue-list">
                             {borrowedItems.map((item, idx) => (
-                              <li key={idx} className="queue-item">
-                                <span className="queue-index">#{idx + 1}</span>
-                                <span className="queue-member"><strong>{item.title}</strong></span>
-                                <span className="badge badge-borrowed font-xsmall">Due: {item.dueDate}</span>
+                              <li key={item.id} className="queue-item">
+                                <span className="queue-num">#{idx + 1}</span>
+                                <span className="queue-name"><strong>{item.title}</strong></span>
+                                <span className={`badge ${item.isOverdue ? "badge-red" : "badge-gray"} font-xsmall`}>
+                                  Due: {item.dueDate}
+                                </span>
                               </li>
                             ))}
                           </ul>
                         ) : (
-                          <p className="empty-queue-text">No active material circulations.</p>
+                          <p className="text-muted" style={{ fontSize: "0.85rem" }}>No active material circulations.</p>
                         )}
                       </div>
                     </div>
@@ -245,54 +261,56 @@ export default function Members({
 
       {/* Member Registration Modal Form */}
       {isFormOpen && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setIsFormOpen(false)}>
-          <div className="modal-content glass-panel animate-scale-up size-small" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Register New Library Card</h2>
-              <button className="modal-close-btn" onClick={() => setIsFormOpen(false)}>×</button>
+        <div className="modal-bg" onClick={() => setIsFormOpen(false)}>
+          <div className="modal-box modal-sm animate-in" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Register New Card Holder</h2>
+              <button className="modal-close" onClick={() => setIsFormOpen(false)}>×</button>
             </div>
             
-            <form onSubmit={handleFormSubmit} className="modal-form">
-              <div className="input-group">
-                <span className="input-label">Borrower Full Name *</span>
-                <input 
-                  type="text" 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
-                  placeholder="e.g. Cassandra Cillian"
-                  className="input-field"
-                  required
-                />
+            <form onSubmit={handleFormSubmit}>
+              <div className="modal-body">
+                <div className="field">
+                  <label className="field-label">Borrower Full Name *</label>
+                  <input 
+                    type="text" 
+                    value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    placeholder="e.g. Cassandra Cillian"
+                    className="input"
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field-label">Email Address *</label>
+                  <input 
+                    type="email" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    placeholder="e.g. cassandra.c@library.org"
+                    className="input"
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field-label">Contact Phone</label>
+                  <input 
+                    type="tel" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)} 
+                    placeholder="e.g. (555) 019-3329"
+                    className="input"
+                  />
+                </div>
               </div>
 
-              <div className="input-group">
-                <span className="input-label">Email Address *</span>
-                <input 
-                  type="email" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)} 
-                  placeholder="e.g. cassandra.c@library.org"
-                  className="input-field"
-                  required
-                />
-              </div>
-
-              <div className="input-group">
-                <span className="input-label">Contact Phone</span>
-                <input 
-                  type="tel" 
-                  value={phone} 
-                  onChange={(e) => setPhone(e.target.value)} 
-                  placeholder="e.g. (555) 019-3329"
-                  className="input-field"
-                />
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsFormOpen(false)}>
+              <div className="modal-foot">
+                <button type="button" className="btn btn-ghost" onClick={() => setIsFormOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-accent">
+                <button type="submit" className="btn btn-purple">
                   Issue Membership Card
                 </button>
               </div>

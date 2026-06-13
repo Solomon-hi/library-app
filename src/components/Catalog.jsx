@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 
 // Inline Custom SVGs for catalog interface
 const SearchIcon = () => (
@@ -8,15 +8,15 @@ const SearchIcon = () => (
   </svg>
 );
 
-const TrashIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const TrashIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 );
 
-const EditIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const EditIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
     <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
   </svg>
@@ -33,7 +33,9 @@ export default function Catalog({
   onAddReservation,
   onRemoveReservation,
   quickActionState,
-  clearQuickAction
+  clearQuickAction,
+  showToast,
+  showConfirm
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // "all", "available", "borrowed", "overdue"
@@ -48,7 +50,7 @@ export default function Catalog({
   // Form Fields State
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
-  const [genre, setGenre] = useState("");
+  const [genre, setGenre] = useState("Fantasy");
   const [isbn, setIsbn] = useState("");
   const [year, setYear] = useState("");
   const [language, setLanguage] = useState("English");
@@ -58,12 +60,14 @@ export default function Catalog({
   // Reservation Form State
   const [selectedReserveMember, setSelectedReserveMember] = useState("");
 
+  const today = useMemo(() => new Date(), []);
+
   // Handle opening form for adding a book
   const openAddForm = () => {
     setEditingBook(null);
     setTitle("");
     setAuthor("");
-    setGenre("Fiction");
+    setGenre("Fantasy");
     setIsbn("");
     setYear("");
     setLanguage("English");
@@ -80,10 +84,10 @@ export default function Catalog({
     setAuthor(book.author);
     setGenre(book.genre);
     setIsbn(book.isbn);
-    setYear(book.year);
+    setYear(book.year || "");
     setLanguage(book.language || "English");
     setDescription(book.description || "");
-    setCoverTheme(book.coverTheme || "purple");
+    setCoverTheme(book.coverTheme || "emerald");
     setIsFormOpen(true);
   };
 
@@ -91,7 +95,7 @@ export default function Catalog({
   const handleFormSubmit = (e) => {
     e.preventDefault();
     if (!title || !author || !isbn) {
-      alert("Please fill in the required fields (Title, Author, ISBN).");
+      showToast("Please fill in the required fields (Title, Author, ISBN).", "error");
       return;
     }
 
@@ -123,7 +127,7 @@ export default function Catalog({
   };
 
   // Handle Quick Actions forwarded from Dashboard
-  React.useEffect(() => {
+  useEffect(() => {
     if (quickActionState === "addBook") {
       openAddForm();
       clearQuickAction();
@@ -141,8 +145,6 @@ export default function Catalog({
 
   // Filtering & Searching Logics
   const filteredBooks = useMemo(() => {
-    const today = new Date("2026-05-26");
-    
     return books
       .filter(book => {
         // Search Matching
@@ -167,12 +169,11 @@ export default function Catalog({
         if (sortBy === "title") return a.title.localeCompare(b.title);
         if (sortBy === "year") return parseInt(b.year || 0) - parseInt(a.year || 0);
         if (sortBy === "newest") {
-          // Sort by their id as a proxy for insertion
           return b.id.localeCompare(a.id);
         }
         return 0;
       });
-  }, [books, search, filter, sortBy]);
+  }, [books, search, filter, sortBy, today]);
 
   const toggleExpand = (id) => {
     setExpandedBookId(expandedBookId === id ? null : id);
@@ -187,225 +188,227 @@ export default function Catalog({
     setReserveBook(null);
   };
 
-  return (
-    <div className="catalog-container animate-fade-in">
-      
-      {/* Search and Filters Drawer */}
-      <div className="catalog-control-panel glass-panel">
-        <div className="search-bar-wrapper">
-          <span className="search-icon"><SearchIcon /></span>
-          <input 
-            type="text" 
-            placeholder="Search books by title, author, genre or ISBN..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-field search-input"
-          />
-          {search && (
-            <button className="clear-search-btn" onClick={() => setSearch("")}>×</button>
-          )}
-        </div>
+  // Count metrics for tabs
+  const countAvailable = useMemo(() => books.filter(b => b.status === "Available").length, [books]);
+  const countBorrowed = useMemo(() => books.filter(b => b.status === "Borrowed").length, [books]);
+  const countOverdue = useMemo(() => books.filter(b => b.status === "Borrowed" && b.dueDate && new Date(b.dueDate) < today).length, [books, today]);
 
-        <div className="filter-sort-controls">
-          <div className="catalog-tabs">
+  return (
+    <div className="catalog-container animate-fade">
+      
+      {/* Search and Filters Toolbar */}
+      <div className="toolbar" style={{ marginBottom: "20px" }}>
+        <div className="toolbar-left">
+          <div className="search-bar">
+            <div className="input-icon-wrap">
+              <span className="input-icon"><SearchIcon /></span>
+              <input 
+                type="text" 
+                placeholder="Search books by title, author, genre or ISBN..." 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input"
+              />
+              {search && (
+                <button className="input-clear" onClick={() => setSearch("")}>×</button>
+              )}
+            </div>
+          </div>
+
+          <div className="filter-tabs">
             <button 
-              className={`catalog-tab ${filter === "all" ? "active" : ""}`}
+              className={`filter-tab ${filter === "all" ? "active" : ""}`}
               onClick={() => setFilter("all")}
             >
-              All Books <span className="tab-indicator">{books.length}</span>
+              All <span className="tab-count">{books.length}</span>
             </button>
             <button 
-              className={`catalog-tab ${filter === "available" ? "active" : ""}`}
+              className={`filter-tab ${filter === "available" ? "active" : ""}`}
               onClick={() => setFilter("available")}
             >
-              Available <span className="tab-indicator green">{books.filter(b => b.status === "Available").length}</span>
+              Available <span className="tab-count">{countAvailable}</span>
             </button>
             <button 
-              className={`catalog-tab ${filter === "borrowed" ? "active" : ""}`}
+              className={`filter-tab ${filter === "borrowed" ? "active" : ""}`}
               onClick={() => setFilter("borrowed")}
             >
-              Circulating <span className="tab-indicator orange">{books.filter(b => b.status === "Borrowed").length}</span>
+              Circulating <span className="tab-count">{countBorrowed}</span>
             </button>
             <button 
-              className={`catalog-tab ${filter === "overdue" ? "active" : ""}`}
+              className={`filter-tab ${filter === "overdue" ? "active" : ""}`}
               onClick={() => setFilter("overdue")}
             >
-              Overdue <span className="tab-indicator crimson">{
-                books.filter(b => b.status === "Borrowed" && b.dueDate && new Date(b.dueDate) < new Date("2026-05-26")).length
-              }</span>
+              Overdue <span className="tab-count" style={{ backgroundColor: countOverdue > 0 ? "var(--red-dim)" : "", color: countOverdue > 0 ? "var(--red)" : "" }}>{countOverdue}</span>
             </button>
           </div>
+        </div>
 
-          <div className="sort-wrapper">
-            <label className="sort-label">Sort By:</label>
-            <select 
-              value={sortBy} 
-              onChange={(e) => setSortBy(e.target.value)}
-              className="input-field sort-select"
-            >
-              <option value="title">Alphabetical (A-Z)</option>
-              <option value="year">Publication Year</option>
-              <option value="newest">Recently Catalogued</option>
-            </select>
-            
-            <button className="btn btn-primary add-book-btn" onClick={openAddForm}>
-              + Add Book
-            </button>
-          </div>
+        <div className="toolbar-right">
+          <select 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value)}
+            className="input sort-select"
+          >
+            <option value="title">Alphabetical (A-Z)</option>
+            <option value="year">Publication Year</option>
+            <option value="newest">Recently Catalogued</option>
+          </select>
+          
+          <button className="btn btn-primary" onClick={openAddForm}>
+            + Add Book
+          </button>
         </div>
       </div>
 
       {/* Grid Shelf */}
       {filteredBooks.length === 0 ? (
-        <div className="empty-catalog-state glass-panel animate-scale-up">
-          <div className="empty-state-graphic">
-            <svg viewBox="0 0 100 100" width="80" height="80" fill="none" stroke="var(--text-muted)" strokeWidth="1.5">
-              <rect x="25" y="15" width="50" height="70" rx="4" />
-              <line x1="35" y1="30" x2="65" y2="30" />
-              <line x1="35" y1="45" x2="65" y2="45" />
-              <line x1="35" y1="60" x2="55" y2="60" />
+        <div className="empty-state card card-p animate-in">
+          <div className="empty-icon">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="9" y1="9" x2="15" y2="9" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
             </svg>
           </div>
-          <h3>No matching records found</h3>
-          <p>We couldn't find any catalogued books that match your filters or search query.</p>
-          <button className="btn btn-secondary" onClick={() => { setSearch(""); setFilter("all"); }}>
+          <h3 className="empty-title">No matching records found</h3>
+          <p className="empty-sub">We couldn't find any catalogued books that match your filters or search query.</p>
+          <button className="btn btn-ghost btn-sm mt-3" onClick={() => { setSearch(""); setFilter("all"); }}>
             Clear Search Filter
           </button>
         </div>
       ) : (
-        <div className="catalog-grid">
+        <div className="book-grid">
           {filteredBooks.map((book) => {
             const isExpanded = expandedBookId === book.id;
-            const isOverdue = book.status === "Borrowed" && book.dueDate && new Date(book.dueDate) < new Date("2026-05-26");
+            const isOverdue = book.status === "Borrowed" && book.dueDate && new Date(book.dueDate) < today;
             
             return (
               <div 
                 key={book.id} 
-                className={`book-card glass-panel ${isExpanded ? "expanded" : ""} ${isOverdue ? "overdue-border" : ""}`}
+                className={`book-card card ${isExpanded ? "expanded" : ""} ${isOverdue ? "overdue-card" : ""}`}
                 onClick={() => toggleExpand(book.id)}
               >
-                {/* Book Card Core visual top */}
-                <div className="book-card-main">
-                  {/* Decorative Cover Gradient Spine */}
-                  <div className="book-spine-cover" style={{ background: book.coverUrl }}>
-                    <div className="cover-grid-decor"></div>
-                    <div className="cover-title-spine">{book.title}</div>
-                    <div className="cover-author-spine">{book.author}</div>
+                {/* Book Card Core Visual Top */}
+                <div className="book-card-top">
+                  {/* Spine cover gradient */}
+                  <div className="cover-pill" style={{ background: book.coverUrl }}>
+                    <div className="cover-title">{book.title}</div>
+                    <div className="cover-author">{book.author}</div>
                   </div>
 
                   {/* Core details */}
-                  <div className="book-card-info">
-                    <div className="info-header">
-                      <span className="book-genre">{book.genre}</span>
-                      
-                      {/* Availability status badge */}
+                  <div className="book-meta">
+                    <div>
+                      <div className="book-genre-tag">{book.genre}</div>
+                      <h3 className="book-title" title={book.title}>{book.title}</h3>
+                      <p className="book-author">by {book.author}</p>
+                    </div>
+
+                    <div className="book-meta-row">
+                      <span>{book.year || "N/A"}</span>
+                      <span>•</span>
+                      <span>{book.language || "English"}</span>
+                      <span>•</span>
                       {book.status === "Available" && (
-                        <span className="badge badge-available">Shelved</span>
+                        <span className="badge badge-green">Shelved</span>
                       )}
                       {book.status === "Borrowed" && (
-                        <span className={`badge ${isOverdue ? "badge-overdue" : "badge-borrowed"}`}>
+                        <span className={`badge ${isOverdue ? "badge-red" : "badge-amber"}`}>
                           {isOverdue ? "Overdue" : "Out"}
                         </span>
                       )}
                       {book.status === "Reserved" && (
-                        <span className="badge badge-reserved">On Hold</span>
+                        <span className="badge badge-purple">On Hold</span>
                       )}
                     </div>
-
-                    <h3 className="book-title">{book.title}</h3>
-                    <p className="book-author">by {book.author}</p>
-
-                    <div className="book-details-mini">
-                      <span><strong>Year:</strong> {book.year || "N/A"}</span>
-                      <span><strong>Language:</strong> {book.language || "English"}</span>
-                    </div>
-
-                    {book.status === "Borrowed" && book.dueDate && (
-                      <div className={`circulation-footer ${isOverdue ? "overdue-alert" : ""}`}>
-                        <span className="circ-label">Return Due:</span>
-                        <span className="circ-date">{book.dueDate}</span>
-                      </div>
-                    )}
                   </div>
                 </div>
 
+                {/* Return due date footer */}
+                {book.status === "Borrowed" && book.dueDate && (
+                  <div className="book-footer">
+                    <span className="text-muted">Return Due:</span>
+                    <span className={`book-due ${isOverdue ? "overdue" : ""}`}>{book.dueDate}</span>
+                  </div>
+                )}
+
                 {/* Expanded Details Drawer */}
                 {isExpanded && (
-                  <div className="book-expanded-drawer" onClick={(e) => e.stopPropagation()}>
-                    <hr className="drawer-divider" />
-                    
-                    <div className="drawer-grid">
+                  <div className="book-drawer" onClick={(e) => e.stopPropagation()}>
+                    <div className="drawer-cols">
                       {/* Left: Summary description */}
-                      <div className="drawer-desc-block">
-                        <h4>Book Overview</h4>
-                        <p className="book-desc-text">
+                      <div>
+                        <div className="drawer-sec-title">Book Overview</div>
+                        <p className="book-desc">
                           {book.description || "No full synopsis catalogued. Edit the book records to add a synopsis."}
                         </p>
-                        <div className="desc-metadata">
-                          <p><strong>ISBN:</strong> {book.isbn}</p>
+                        <div className="desc-meta">
+                          <div><strong>ISBN:</strong> {book.isbn}</div>
                           {book.borrowedBy && (
-                            <p><strong>Borrowed By:</strong> {memberMap[book.borrowedBy] || "Registered Borrower"} ({book.borrowedBy})</p>
+                            <div>
+                              <strong>Borrowed By:</strong> {memberMap[book.borrowedBy] || "Registered Borrower"} ({book.borrowedBy})
+                            </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Right: Reservation queue & Actions */}
-                      <div className="drawer-queue-block">
-                        <h4>Hold Request Queue</h4>
+                      {/* Right: Reservation queue */}
+                      <div>
+                        <div className="drawer-sec-title">Hold Request Queue</div>
                         {book.reservations && book.reservations.length > 0 ? (
-                          <ul className="reserve-queue-list">
+                          <ul className="queue-list">
                             {book.reservations.map((memId, idx) => (
-                              <li key={idx} className="queue-item">
-                                <span className="queue-index">#{idx + 1}</span>
-                                <span className="queue-member">{memberMap[memId] || memId}</span>
+                              <li key={memId} className="queue-item">
+                                <span className="queue-num">#{idx + 1}</span>
+                                <span className="queue-name">{memberMap[memId] || memId}</span>
                                 <button 
-                                  className="btn-text-delete"
+                                  className="btn btn-ghost btn-xs"
                                   onClick={() => onRemoveReservation(book.id, memId)}
                                   title="Cancel hold"
                                 >
-                                  Cancel hold
+                                  Cancel
                                 </button>
                               </li>
                             ))}
                           </ul>
                         ) : (
-                          <p className="empty-queue-text">No active hold requests.</p>
+                          <p className="text-muted" style={{ fontSize: "0.85rem" }}>No active hold requests.</p>
                         )}
 
-                        <div className="queue-actions">
-                          {book.status === "Borrowed" && (
-                            <button 
-                              className="btn btn-secondary btn-small"
-                              onClick={() => setReserveBook(book)}
-                            >
-                              + Place Hold Request
-                            </button>
-                          )}
-                        </div>
+                        {book.status === "Borrowed" && (
+                          <button 
+                            className="btn btn-purple btn-xs mt-3"
+                            onClick={() => setReserveBook(book)}
+                          >
+                            + Place Hold Request
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    <div className="drawer-actions-panel">
-                      <div className="drawer-admin-buttons">
-                        <button className="btn btn-secondary" onClick={(e) => openEditForm(book, e)}>
-                          <EditIcon /> Edit Details
+                    {/* Drawer Footer Actions */}
+                    <div className="drawer-actions">
+                      <div className="drawer-act-left">
+                        <button className="btn btn-ghost btn-sm" onClick={(e) => openEditForm(book, e)}>
+                          <EditIcon size={14} /> Edit Details
                         </button>
-                        <button className="btn btn-danger" onClick={(e) => { e.stopPropagation(); if (confirm(`Delete ${book.title}?`)) onDeleteBook(book.id); }}>
-                          <TrashIcon /> Delete Catalog
+                        <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); showConfirm("Delete Catalog Record?", `Are you sure you want to permanently remove "${book.title}"?`, () => onDeleteBook(book.id)); }}>
+                          <TrashIcon size={14} /> Delete Catalog
                         </button>
                       </div>
 
-                      <div className="drawer-checkout-buttons">
+                      <div className="drawer-act-right">
                         {book.status === "Available" ? (
                           <button 
-                            className="btn btn-primary"
+                            className="btn btn-primary btn-sm"
                             onClick={() => onCheckoutTrigger(book)}
                           >
                             Checkout Book
                           </button>
                         ) : (
                           <button 
-                            className="btn btn-accent"
+                            className="btn btn-green btn-sm"
                             onClick={() => onReturnBook(book.id)}
                           >
                             Mark as Returned
@@ -423,121 +426,132 @@ export default function Catalog({
 
       {/* Catalog Entry / Edit Modal Form */}
       {isFormOpen && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setIsFormOpen(false)}>
-          <div className="modal-content glass-panel animate-scale-up" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-bg" onClick={() => setIsFormOpen(false)}>
+          <div className="modal-box modal-md animate-in" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
               <h2>{editingBook ? "Edit Catalogue Record" : "Add Book to Shelves"}</h2>
-              <button className="modal-close-btn" onClick={() => setIsFormOpen(false)}>×</button>
+              <button className="modal-close" onClick={() => setIsFormOpen(false)}>×</button>
             </div>
             
-            <form onSubmit={handleFormSubmit} className="modal-form">
-              <div className="form-grid">
-                <div className="input-group">
-                  <span className="input-label">Book Title *</span>
-                  <input 
-                    type="text" 
-                    value={title} 
-                    onChange={(e) => setTitle(e.target.value)} 
-                    placeholder="Enter full title"
-                    className="input-field"
-                    required
-                  />
-                </div>
+            <form onSubmit={handleFormSubmit}>
+              <div className="modal-body">
+                <div className="form-grid-2">
+                  <div className="field">
+                    <label className="field-label">Book Title *</label>
+                    <input 
+                      type="text" 
+                      value={title} 
+                      onChange={(e) => setTitle(e.target.value)} 
+                      placeholder="Enter full title"
+                      className="input"
+                      required
+                    />
+                  </div>
 
-                <div className="input-group">
-                  <span className="input-label">Author Name *</span>
-                  <input 
-                    type="text" 
-                    value={author} 
-                    onChange={(e) => setAuthor(e.target.value)} 
-                    placeholder="Enter primary author"
-                    className="input-field"
-                    required
-                  />
-                </div>
+                  <div className="field">
+                    <label className="field-label">Author Name *</label>
+                    <input 
+                      type="text" 
+                      value={author} 
+                      onChange={(e) => setAuthor(e.target.value)} 
+                      placeholder="Enter primary author"
+                      className="input"
+                      required
+                    />
+                  </div>
 
-                <div className="input-group">
-                  <span className="input-label">Genre Grouping</span>
-                  <select 
-                    value={genre} 
-                    onChange={(e) => setGenre(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="Fantasy">Fantasy</option>
-                    <option value="Science Fiction">Science Fiction</option>
-                    <option value="Cyberpunk">Cyberpunk</option>
-                    <option value="Dystopian">Dystopian</option>
-                    <option value="Mystery/Thriller">Mystery/Thriller</option>
-                    <option value="Biography">Biography</option>
-                    <option value="History">History</option>
-                    <option value="Classical Fiction">Classical Fiction</option>
-                  </select>
-                </div>
-
-                <div className="input-group">
-                  <span className="input-label">International Code (ISBN) *</span>
-                  <input 
-                    type="text" 
-                    value={isbn} 
-                    onChange={(e) => setIsbn(e.target.value)} 
-                    placeholder="e.g. 978-3-16-148410-0"
-                    className="input-field"
-                    required
-                  />
-                </div>
-
-                <div className="input-group">
-                  <span className="input-label">Publication Year</span>
-                  <input 
-                    type="number" 
-                    value={year} 
-                    onChange={(e) => setYear(e.target.value)} 
-                    placeholder="e.g. 1965"
-                    className="input-field"
-                  />
-                </div>
-
-                <div className="input-group">
-                  <span className="input-label">Text Language</span>
-                  <input 
-                    type="text" 
-                    value={language} 
-                    onChange={(e) => setLanguage(e.target.value)} 
-                    placeholder="English"
-                    className="input-field"
-                  />
-                </div>
-              </div>
-
-              <div className="input-group full-width">
-                <span className="input-label">Synopsis / Description</span>
-                <textarea 
-                  value={description} 
-                  onChange={(e) => setDescription(e.target.value)} 
-                  placeholder="Provide a brief description of the plot, contents or chapters..."
-                  className="input-field textarea-field"
-                  rows="3"
-                ></textarea>
-              </div>
-
-              <div className="input-group full-width">
-                <span className="input-label">Shelf Cover Aesthetic Theme</span>
-                <div className="cover-theme-picker">
-                  {["emerald", "purple", "amber", "crimson", "blue"].map((theme) => (
-                    <button
-                      key={theme}
-                      type="button"
-                      className={`theme-pick-btn ${theme} ${coverTheme === theme ? "selected" : ""}`}
-                      onClick={() => setCoverTheme(theme)}
+                  <div className="field">
+                    <label className="field-label">Genre Grouping</label>
+                    <select 
+                      value={genre} 
+                      onChange={(e) => setGenre(e.target.value)}
+                      className="input"
                     >
-                      {theme}
-                    </button>
-                  ))}
+                      <option value="Fantasy">Fantasy</option>
+                      <option value="Science Fiction">Science Fiction</option>
+                      <option value="Cyberpunk">Cyberpunk</option>
+                      <option value="Dystopian">Dystopian</option>
+                      <option value="Mystery/Thriller">Mystery/Thriller</option>
+                      <option value="Biography">Biography</option>
+                      <option value="History">History</option>
+                      <option value="Classical Fiction">Classical Fiction</option>
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label className="field-label">ISBN Code *</label>
+                    <input 
+                      type="text" 
+                      value={isbn} 
+                      onChange={(e) => setIsbn(e.target.value)} 
+                      placeholder="e.g. 978-3-16-148410-0"
+                      className="input"
+                      required
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label className="field-label">Publication Year</label>
+                    <input 
+                      type="number" 
+                      value={year} 
+                      onChange={(e) => setYear(e.target.value)} 
+                      placeholder="e.g. 1965"
+                      className="input"
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label className="field-label">Text Language</label>
+                    <input 
+                      type="text" 
+                      value={language} 
+                      onChange={(e) => setLanguage(e.target.value)} 
+                      placeholder="English"
+                      className="input"
+                    />
+                  </div>
+
+                  <div className="field form-full">
+                    <label className="field-label">Synopsis / Description</label>
+                    <textarea 
+                      value={description} 
+                      onChange={(e) => setDescription(e.target.value)} 
+                      placeholder="Provide a brief description of the plot, contents or chapters..."
+                      className="input"
+                      rows="3"
+                    ></textarea>
+                  </div>
+
+                  <div className="field form-full">
+                    <label className="field-label">Shelf Cover Aesthetic Theme</label>
+                    <div className="theme-grid">
+                      {["emerald", "purple", "amber", "crimson", "blue"].map((themeName) => {
+                        let bgGrad = "linear-gradient(135deg, #1e293b, #0f172a)";
+                        if (themeName === "emerald") bgGrad = "linear-gradient(135deg, #064e3b, #022c22)";
+                        if (themeName === "purple") bgGrad = "linear-gradient(135deg, #4c1d95, #2e1065)";
+                        if (themeName === "amber") bgGrad = "linear-gradient(135deg, #78350f, #451a03)";
+                        if (themeName === "crimson") bgGrad = "linear-gradient(135deg, #7f1d1d, #450a0a)";
+                        if (themeName === "blue") bgGrad = "linear-gradient(135deg, #1e3a8a, #172554)";
+
+                        return (
+                          <button
+                            key={themeName}
+                            type="button"
+                            className={`theme-swatch ${coverTheme === themeName ? "selected" : ""}`}
+                            style={{ background: bgGrad }}
+                            onClick={() => setCoverTheme(themeName)}
+                            title={themeName}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsFormOpen(false)}>
+              <div className="modal-foot">
+                <button type="button" className="btn btn-ghost" onClick={() => setIsFormOpen(false)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
@@ -551,40 +565,42 @@ export default function Catalog({
 
       {/* Reservation Hold Request Modal */}
       {reserveBook && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setReserveBook(null)}>
-          <div className="modal-content glass-panel animate-scale-up size-small" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-bg" onClick={() => setReserveBook(null)}>
+          <div className="modal-box modal-sm animate-in" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
               <h2>Request Hold Queue</h2>
-              <button className="modal-close-btn" onClick={() => setReserveBook(null)}>×</button>
+              <button className="modal-close" onClick={() => setReserveBook(null)}>×</button>
             </div>
             
-            <form onSubmit={handleReserveSubmit} className="modal-form">
-              <p className="modal-helper-text">
-                <strong>{reserveBook.title}</strong> is currently borrowed. Reserve a hold, and the member will be notified when it returns.
-              </p>
-              
-              <div className="input-group">
-                <span className="input-label">Select Library Member</span>
-                <select
-                  value={selectedReserveMember}
-                  onChange={(e) => setSelectedReserveMember(e.target.value)}
-                  className="input-field"
-                  required
-                >
-                  <option value="">-- Choose Member Record --</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.id})
-                    </option>
-                  ))}
-                </select>
+            <form onSubmit={handleReserveSubmit}>
+              <div className="modal-body">
+                <p className="text-muted" style={{ marginBottom: "12px", fontSize: "0.88rem", lineHeight: "1.4" }}>
+                  <strong>{reserveBook.title}</strong> is currently borrowed. Reserve a hold, and the member will be notified when it returns.
+                </p>
+                
+                <div className="field">
+                  <label className="field-label">Select Library Member</label>
+                  <select
+                    value={selectedReserveMember}
+                    onChange={(e) => setSelectedReserveMember(e.target.value)}
+                    className="input"
+                    required
+                  >
+                    <option value="">-- Choose Member Record --</option>
+                    {members.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setReserveBook(null)}>
+              <div className="modal-foot">
+                <button type="button" className="btn btn-ghost" onClick={() => setReserveBook(null)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-accent" disabled={!selectedReserveMember}>
+                <button type="submit" className="btn btn-purple" disabled={!selectedReserveMember}>
                   Queue Hold Request
                 </button>
               </div>
